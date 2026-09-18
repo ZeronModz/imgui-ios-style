@@ -7,8 +7,8 @@
 #include <cstring>
 
 #include "imgui.h"
-#include "imgui/backends/imgui_impl_android.h"
-#include "imgui/backends/imgui_impl_opengl3.h"
+#include "imgui_impl_android.h"
+#include "imgui_impl_opengl3.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "Menu", __VA_ARGS__)
 

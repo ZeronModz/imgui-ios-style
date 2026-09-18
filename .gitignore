@@ -1,24 +1,9 @@
-# Build outputs
 *.o
 *.so
 *.apk
 *.dex
 *.class
 build/
-build_apk/
-jni_build/
-native_build/
-
-# IDE
-.idea/
-*.iml
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Termux
-android-ndk/
-
-# Debug keystore
-*.keystore
+out/
+android/build/
+android/out/

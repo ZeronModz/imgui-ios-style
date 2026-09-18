@@ -9,7 +9,7 @@ find_library(android-lib android)
 find_library(GLESv2-lib GLESv2)
 find_library(EGL-lib EGL)
 
-set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../imgui")
+set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../imgui")
 
 add_library(menu SHARED
     ${IMGUI_DIR}/imgui.cpp

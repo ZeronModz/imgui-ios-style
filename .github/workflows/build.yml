@@ -21,18 +21,30 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Install NDK and Build Tools
+    - name: Install NDK
       run: |
-        sdkmanager --install "ndk;27.0.12077973" "build-tools;34.0.0" "platforms;android-34"
-        echo "NDK=$ANDROID_HOME/ndk/27.0.12077973" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$ANDROID_HOME"
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+        ls $ANDROID_HOME/cmdline-tools/latest/bin/ 2>/dev/null || echo "no cmdline-tools"
+        ls $ANDROID_HOME/ 2>/dev/null
+        # Use sdkmanager directly
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973" "build-tools;34.0.0" "platforms;android-34" 2>&1 || \
+        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "build-tools;34.0.0" "platforms;android-34" 2>&1 || true
+        echo "NDK_HOME=$(ls -d $ANDROID_HOME/ndk/* 2>/dev/null | head -1)" >> $GITHUB_ENV
+
+    - name: Find NDK path
+      run: |
+        echo "Available NDKs:"
+        ls -la $ANDROID_HOME/ndk/ 2>/dev/null || echo "No NDK dir"
+        NDK_PATH=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1)
+        echo "NDK_PATH=$NDK_PATH" >> $GITHUB_ENV
+        echo "Using NDK: $NDK_PATH"
+        ls "$NDK_PATH/build/cmake/android.toolchain.cmake" 2>/dev/null || echo "No toolchain file"
 
     - name: Build native .so
       run: |
-        NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
-        TOOLCHAIN=$NDK_HOME/build/cmake/android.toolchain.cmake
+        echo "NDK_PATH=$NDK_PATH"
+        TOOLCHAIN=$NDK_PATH/build/cmake/android.toolchain.cmake
         
         mkdir -p android/jni_build
         cd android/jni_build
@@ -55,15 +67,18 @@ jobs:
 
     - name: Build APK
       run: |
-        ANDROID_JAR=$ANDROID_HOME/platforms/android-34/android.jar
-        BUILD_TOOLS=$ANDROID_HOME/build-tools/34.0.0
+        ANDROID_JAR=$(find $ANDROID_HOME/platforms -name "android.jar" | head -1)
+        BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/*/ | sort -V | tail -1)
+        echo "Android JAR: $ANDROID_JAR"
+        echo "Build Tools: $BUILD_TOOLS"
+        
         SRC=android/app/src/main
         BUILD_DIR=android/build_apk
         
         mkdir -p $BUILD_DIR/gen $BUILD_DIR/classes
         
         # Generate R.java
-        $BUILD_TOOLS/aapt package -f -m \
+        ${BUILD_TOOLS}aapt package -f -m \
           -S $SRC/res \
           -J $BUILD_DIR/gen \
           -M $SRC/AndroidManifest.xml \
@@ -77,12 +92,12 @@ jobs:
           $SRC/java/com/imgui/iosstyle/MainActivity.java
         
         # DEX
-        $BUILD_TOOLS/d8 --output $BUILD_DIR \
+        ${BUILD_TOOLS}d8 --output $BUILD_DIR \
           --lib $ANDROID_JAR \
           $BUILD_DIR/classes/com/imgui/iosstyle/*.class
         
         # Package resources
-        $BUILD_TOOLS/aapt package -f \
+        ${BUILD_TOOLS}aapt package -f \
           -M $SRC/AndroidManifest.xml \
           -S $SRC/res \
           -I $ANDROID_JAR \
@@ -106,7 +121,7 @@ jobs:
           -dname "CN=Debug,OU=Debug,O=Debug,L=Debug,S=Debug,C=US"
         
         # Sign
-        $BUILD_TOOLS/apksigner sign \
+        ${BUILD_TOOLS}apksigner sign \
           --ks $BUILD_DIR/debug.keystore \
           --ks-pass pass:android \
           --key-pass pass:android \
@@ -115,7 +130,7 @@ jobs:
           $BUILD_DIR/app.unsigned.apk
         
         # Verify
-        $BUILD_TOOLS/apksigner verify $GITHUB_WORKSPACE/ios-style.apk
+        ${BUILD_TOOLS}apksigner verify $GITHUB_WORKSPACE/ios-style.apk
         ls -lh $GITHUB_WORKSPACE/ios-style.apk
 
     - name: Upload APK

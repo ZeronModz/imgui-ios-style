@@ -2,7 +2,6 @@ package com.menu;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.SurfaceHolder;
@@ -22,6 +21,7 @@ public class MainActivity extends Activity {
     static { System.loadLibrary("menu"); }
 
     private volatile boolean running;
+    private Thread renderThread;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -39,12 +39,24 @@ public class MainActivity extends Activity {
             public void surfaceCreated(SurfaceHolder h) {
                 nativeInit(h.getSurface());
                 running = true;
-                new Thread(() -> {
-                    while (running) { nativeRender(); try { Thread.sleep(16); } catch(Exception e){break;} }
-                }).start();
+                renderThread = new Thread(() -> {
+                    while (running) {
+                        nativeRender();
+                        try { Thread.sleep(16); } catch(Exception e) { break; }
+                    }
+                });
+                renderThread.start();
             }
-            public void surfaceChanged(SurfaceHolder h, int f, int w, int hh) { nativeResize(w, hh); }
-            public void surfaceDestroyed(SurfaceHolder h) { running = false; }
+            public void surfaceChanged(SurfaceHolder h, int f, int w, int hh) {
+                nativeResize(w, hh);
+            }
+            public void surfaceDestroyed(SurfaceHolder h) {
+                running = false;
+                if (renderThread != null) {
+                    try { renderThread.join(100); } catch(Exception e) {}
+                    renderThread = null;
+                }
+            }
         });
 
         surfaceView.setOnTouchListener((v, e) -> {
@@ -62,5 +74,6 @@ public class MainActivity extends Activity {
 
     public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if(f) hideUI(); }
     protected void onPause() { super.onPause(); running = false; }
+    protected void onResume() { super.onResume(); hideUI(); }
     protected void onDestroy() { super.onDestroy(); running = false; nativeDestroy(); }
 }

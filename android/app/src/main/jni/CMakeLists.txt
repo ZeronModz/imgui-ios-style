@@ -22,6 +22,10 @@ add_library(menu SHARED
     native_code.cpp
 )
 
-target_include_directories(menu PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends)
+target_include_directories(menu PRIVATE
+    ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
+)
+
 target_link_libraries(menu ${log-lib} ${android-lib} ${GLESv2-lib} ${EGL-lib})
-target_compile_options(menu PRIVATE -O2 -Wall -DIMGUI_IMPL_OPENGL_ES3)
+target_compile_options(menu PRIVATE -O2 -Wall -DIMGUI_IMPL_OPENGL_ES2)

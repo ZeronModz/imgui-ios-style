@@ -1,10 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
-#include <EGL/egl.h>
 #include <GLES2/gl2.h>
-#include <cstring>
 
 #include "imgui.h"
 #include "imgui_impl_android.h"
@@ -12,6 +8,9 @@
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "MenuApp", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "MenuApp", __VA_ARGS__)
+
+static bool g_Initialized = false;
+static int screenWidth = 0, screenHeight = 0;
 
 struct MenuItem {
     const char* icon;
@@ -29,88 +28,16 @@ static MenuItem items[] = {
     {"L", "Player",     "Now playing",           IM_COL32(48, 176, 199, 255)},
 };
 
-static struct {
-    ANativeWindow* window = nullptr;
-    EGLDisplay display = EGL_NO_DISPLAY;
-    EGLSurface surface = EGL_NO_SURFACE;
-    EGLContext context = EGL_NO_CONTEXT;
-    EGLConfig eglConfig = nullptr;
-    int width = 0;
-    int height = 0;
-    bool initialized = false;
-    bool imguiReady = false;
-} app;
+extern "C" {
 
-static bool initEGL() {
-    app.display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (app.display == EGL_NO_DISPLAY) {
-        LOGE("eglGetDisplay failed");
-        return false;
-    }
+JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeInit(JNIEnv* env, jclass cls) {
+    if (g_Initialized) return;
 
-    EGLint major, minor;
-    if (!eglInitialize(app.display, &major, &minor)) {
-        LOGE("eglInitialize failed");
-        return false;
-    }
-    LOGI("EGL version: %d.%d", major, minor);
-
-    EGLint cfgAttribs[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 8,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-        EGL_NONE
-    };
-    EGLint numConfigs;
-    if (!eglChooseConfig(app.display, cfgAttribs, &app.eglConfig, 1, &numConfigs) || numConfigs == 0) {
-        LOGE("eglChooseConfig failed, numConfigs=%d", numConfigs);
-        return false;
-    }
-
-    EGLint contextAttribs[] = { EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE };
-    app.context = eglCreateContext(app.display, app.eglConfig, EGL_NO_CONTEXT, contextAttribs);
-    if (app.context == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext failed");
-        return false;
-    }
-
-    LOGI("EGL initialized successfully");
-    return true;
-}
-
-static bool createSurface() {
-    if (app.surface != EGL_NO_SURFACE) {
-        eglMakeCurrent(app.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroySurface(app.display, app.surface);
-        app.surface = EGL_NO_SURFACE;
-    }
-
-    app.surface = eglCreateWindowSurface(app.display, app.eglConfig, app.window, nullptr);
-    if (app.surface == EGL_NO_SURFACE) {
-        LOGE("eglCreateWindowSurface failed");
-        return false;
-    }
-
-    if (!eglMakeCurrent(app.display, app.surface, app.surface, app.context)) {
-        LOGE("eglMakeCurrent failed");
-        return false;
-    }
-
-    LOGI("Surface created: %dx%d", app.width, app.height);
-    return true;
-}
-
-static void initImGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-    if (app.width > 0 && app.height > 0)
-        io.DisplaySize = ImVec2((float)app.width, (float)app.height);
+    io.IniFilename = NULL;
 
     ImGui::StyleColorsDark();
     ImGuiStyle& s = ImGui::GetStyle();
@@ -120,27 +47,32 @@ static void initImGui() {
     s.ItemSpacing = ImVec2(12, 10);
     s.WindowPadding = ImVec2(16, 16);
 
-    ImGui_ImplAndroid_Init(app.window);
-    ImGui_ImplOpenGL3_Init("#version 100");
-    app.imguiReady = true;
+    ImGui_ImplAndroid_Init();
+    ImGui_ImplOpenGL3_Init("#version 300 es");
+    ImGui::GetStyle().ScaleAllSizes(4.0f);
+
+    g_Initialized = true;
     LOGI("ImGui initialized");
 }
 
-static void renderFrame() {
-    if (!app.imguiReady || app.width <= 0 || app.height <= 0) return;
-
-    eglMakeCurrent(app.display, app.surface, app.surface, app.context);
-
+JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeResize(JNIEnv* env, jclass cls, jint w, jint h) {
+    screenWidth = w;
+    screenHeight = h;
+    glViewport(0, 0, w, h);
     ImGuiIO& io = ImGui::GetIO();
-    io.DisplaySize = ImVec2((float)app.width, (float)app.height);
+    io.DisplaySize = ImVec2((float)w, (float)h);
+}
+
+JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeRender(JNIEnv* env, jclass cls) {
+    if (!g_Initialized) return;
 
     ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplAndroid_NewFrame();
+    ImGui_ImplAndroid_NewFrame(screenWidth, screenHeight);
     ImGui::NewFrame();
 
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
-    float w = (float)app.width;
-    float h = (float)app.height;
+    float w = (float)screenWidth;
+    float h = (float)screenHeight;
 
     dl->AddRectFilled(ImVec2(0,0), ImVec2(w,h), IM_COL32(242,242,247,255));
 
@@ -156,6 +88,7 @@ static void renderFrame() {
     dl->AddRectFilled(ImVec2(cx,cy), ImVec2(cx+cw,cy+ch), IM_COL32(255,255,255,255), 20.0f);
 
     float ih = 75.0f;
+    ImGuiIO& io = ImGui::GetIO();
     for (int i = 0; i < 6; i++) {
         float iy = cy + 10 + i * ih;
         bool hov = io.MousePos.x > cx+10 && io.MousePos.x < cx+cw-10 &&
@@ -189,82 +122,24 @@ static void renderFrame() {
     }
 
     ImGui::Render();
-    glViewport(0, 0, app.width, app.height);
-    glClearColor(0.95f, 0.95f, 0.97f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    eglSwapBuffers(app.display, app.surface);
 }
 
-extern "C" {
-    JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeInit(JNIEnv* e, jobject t, jobject s) {
-        if (app.initialized) return;
+JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeTouch(JNIEnv* env, jclass cls, jboolean down, jfloat x, jfloat y) {
+    if (!g_Initialized) return;
+    ImGuiIO& io = ImGui::GetIO();
+    io.MouseDown[0] = down;
+    io.MousePos = ImVec2(x, y);
+}
 
-        app.window = ANativeWindow_fromSurface(e, s);
-        if (!app.window) {
-            LOGE("ANativeWindow_fromSurface returned null");
-            return;
-        }
+JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeDestroy(JNIEnv* env, jclass cls) {
+    if (!g_Initialized) return;
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplAndroid_Shutdown();
+    ImGui::DestroyContext();
+    g_Initialized = false;
+    LOGI("Destroyed");
+}
 
-        ANativeWindow_setBuffersGeometry(app.window, 0, 0, WINDOW_FORMAT_RGBA_8888);
-
-        if (!initEGL()) {
-            LOGE("EGL init failed");
-            ANativeWindow_release(app.window);
-            app.window = nullptr;
-            return;
-        }
-
-        if (!createSurface()) {
-            LOGE("Surface creation failed");
-            eglDestroyContext(app.display, app.context);
-            app.context = EGL_NO_CONTEXT;
-            ANativeWindow_release(app.window);
-            app.window = nullptr;
-            return;
-        }
-
-        app.initialized = true;
-        initImGui();
-        LOGI("nativeInit complete");
-    }
-
-    JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeRender(JNIEnv* e, jobject t) {
-        renderFrame();
-    }
-
-    JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeTouch(JNIEnv* e, jobject t, jint a, jfloat x, jfloat y) {
-        if (!app.imguiReady) return;
-        ImGuiIO& io = ImGui::GetIO();
-        io.MousePos = ImVec2(x, y);
-        io.MouseDown[0] = (a == 0);
-    }
-
-    JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeResize(JNIEnv* e, jobject t, jint w, jint h) {
-        app.width = w;
-        app.height = h;
-        LOGI("Resize: %dx%d", w, h);
-    }
-
-    JNIEXPORT void JNICALL Java_com_menu_MainActivity_nativeDestroy(JNIEnv* e, jobject t) {
-        if (app.imguiReady) {
-            ImGui_ImplOpenGL3_Shutdown();
-            ImGui_ImplAndroid_Shutdown();
-            ImGui::DestroyContext();
-            app.imguiReady = false;
-        }
-        if (app.display != EGL_NO_DISPLAY) {
-            eglMakeCurrent(app.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-            if (app.context != EGL_NO_CONTEXT) eglDestroyContext(app.display, app.context);
-            if (app.surface != EGL_NO_SURFACE) eglDestroySurface(app.display, app.surface);
-            eglTerminate(app.display);
-        }
-        if (app.window) ANativeWindow_release(app.window);
-        app.display = EGL_NO_DISPLAY;
-        app.context = EGL_NO_CONTEXT;
-        app.surface = EGL_NO_SURFACE;
-        app.window = nullptr;
-        app.initialized = false;
-        LOGI("Destroyed");
-    }
 }

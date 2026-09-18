@@ -1,27 +1,27 @@
 package com.menu;
 
 import android.app.Activity;
+import android.opengl.GLSurfaceView;
 import android.os.Bundle;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.view.SurfaceHolder;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.content.pm.ActivityInfo;
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
 
 public class MainActivity extends Activity {
-    private SurfaceView surfaceView;
-    private static native void nativeInit(Surface surface);
-    private static native void nativeRender();
-    private static native void nativeDestroy();
-    private static native void nativeTouch(int action, float x, float y);
-    private static native void nativeResize(int w, int h);
 
     static { System.loadLibrary("menu"); }
 
-    private volatile boolean running;
-    private Thread renderThread;
+    private static native void nativeInit();
+    private static native void nativeResize(int w, int h);
+    private static native void nativeRender();
+    private static native void nativeDestroy();
+    private static native void nativeTouch(boolean down, float x, float y);
+
+    private GLSurfaceView glSurface;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -31,36 +31,27 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 
-        surfaceView = new SurfaceView(this);
-        setContentView(surfaceView);
-        hideUI();
-
-        surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
-            public void surfaceCreated(SurfaceHolder h) {
-                nativeInit(h.getSurface());
-                running = true;
-                renderThread = new Thread(() -> {
-                    while (running) {
-                        nativeRender();
-                        try { Thread.sleep(16); } catch(Exception e) { break; }
-                    }
-                });
-                renderThread.start();
+        glSurface = new GLSurfaceView(this);
+        glSurface.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+        glSurface.getHolder().setFormat(-3);
+        glSurface.setEGLContextClientVersion(3);
+        glSurface.setRenderer(new GLSurfaceView.Renderer() {
+            public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+                nativeInit();
             }
-            public void surfaceChanged(SurfaceHolder h, int f, int w, int hh) {
-                nativeResize(w, hh);
+            public void onSurfaceChanged(GL10 gl, int w, int h) {
+                nativeResize(w, h);
             }
-            public void surfaceDestroyed(SurfaceHolder h) {
-                running = false;
-                if (renderThread != null) {
-                    try { renderThread.join(100); } catch(Exception e) {}
-                    renderThread = null;
-                }
+            public void onDrawFrame(GL10 gl) {
+                nativeRender();
             }
         });
+        glSurface.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
+        setContentView(glSurface);
+        hideUI();
 
-        surfaceView.setOnTouchListener((v, e) -> {
-            nativeTouch(e.getActionMasked(), e.getX(), e.getY());
+        glSurface.setOnTouchListener((v, e) -> {
+            nativeTouch(e.getAction() != MotionEvent.ACTION_UP, e.getRawX(), e.getRawY());
             return true;
         });
     }
@@ -73,7 +64,7 @@ public class MainActivity extends Activity {
     }
 
     public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if(f) hideUI(); }
-    protected void onPause() { super.onPause(); running = false; }
-    protected void onResume() { super.onResume(); hideUI(); }
-    protected void onDestroy() { super.onDestroy(); running = false; nativeDestroy(); }
+    protected void onPause() { super.onPause(); if(glSurface != null) glSurface.onPause(); }
+    protected void onResume() { super.onResume(); hideUI(); if(glSurface != null) glSurface.onResume(); }
+    protected void onDestroy() { super.onDestroy(); nativeDestroy(); }
 }
